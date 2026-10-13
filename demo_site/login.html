@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Log in</title></head>
+<body><h1>Log in</h1>
+<form id="f">
+  <label for="email">Email</label><input id="email" type="email">
+  <label for="password">Password</label><input id="password" type="password">
+  <button type="submit">Sign in</button>
+</form>
+<p id="msg" role="alert"></p>
+<script>
+document.getElementById('f').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var ok = document.getElementById('email').value === 'demo@example.com' &&
+           document.getElementById('password').value === 'Test#1234';
+  if (ok) { location.href = 'dashboard.html'; }
+  else { document.getElementById('msg').textContent = 'Invalid credentials'; }
+});
+</script></body></html>
