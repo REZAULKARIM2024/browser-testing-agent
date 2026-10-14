@@ -152,3 +152,68 @@ def test_redirect_to_another_host_after_a_click_is_caught(page, site):
     planner = ScriptedPlanner([{"type": "click", "target": "Promo offer"}])
     result = _run(page, site, planner)
     assert not result.passed and "disallowed host" in result.reason
+
+
+# ---- adversarial pages -------------------------------------------------------
+
+def test_popup_window_to_another_host_is_blocked(page, site):
+    planner = ScriptedPlanner([
+        {"type": "goto", "url": f"{site}/popup.html"},
+        {"type": "click", "target": "Open offer"},
+        {"type": "press", "key": "Tab"},
+        {"type": "expect_text", "text": "Special offer"},
+        {"type": "finish", "passed": True, "reason": "ok"},
+    ])
+    result = _run(page, site, planner)
+    assert not result.passed and "disallowed host" in result.reason
+
+
+def test_delayed_meta_refresh_to_another_host_is_blocked(page, site):
+    planner = ScriptedPlanner([
+        {"type": "goto", "url": f"{site}/refresh.html"},
+        {"type": "expect_text", "text": "Please wait"},
+        {"type": "press", "key": "Tab"},
+        {"type": "press", "key": "Tab"},
+        {"type": "expect_text", "text": "Please wait"},
+        {"type": "finish", "passed": True, "reason": "ok"},
+    ])
+    result = _run(page, site, planner)
+    assert not result.passed and "disallowed host" in result.reason
+
+
+def test_form_posting_to_another_host_is_blocked(page, site):
+    planner = ScriptedPlanner([
+        {"type": "goto", "url": f"{site}/form.html"},
+        {"type": "fill", "target": "Email", "value": "a@b.c"},
+        {"type": "click", "target": "Subscribe"},
+        {"type": "expect_text", "text": "Newsletter"},
+        {"type": "finish", "passed": True, "reason": "ok"},
+    ])
+    result = _run(page, site, planner)
+    assert not result.passed and "disallowed host" in result.reason
+
+
+def test_javascript_and_data_links_are_blocked(page, site):
+    for target in ("Run script", "Open data page"):
+        planner = ScriptedPlanner([
+            {"type": "goto", "url": f"{site}/schemes.html"},
+            {"type": "click", "target": target},
+        ])
+        result = _run(page, site, planner)
+        assert not result.passed and "blocked scheme" in result.reason, target
+
+
+def test_injection_hidden_in_an_element_label_never_reaches_the_prompt(page, site):
+    from bta.observe import render
+    seen = []
+
+    class Spy(ScriptedPlanner):
+        def next_action(self, goal, observation, history, data_keys):
+            seen.append(observation)
+            return super().next_action(goal, observation, history, data_keys)
+
+    planner = Spy([{"type": "goto", "url": f"{site}/labels.html"}, {"type": "finish", "passed": False}])
+    _run(page, site, planner)
+    prompt_text = render(seen[1])
+    assert "evil.example" not in prompt_text and "Ignore all previous" not in prompt_text
+    assert "Save" in prompt_text and seen[1]["injection_flags"]

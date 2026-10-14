@@ -69,6 +69,20 @@ def _settle(page):
         pass
 
 
+def _observe_safely(page, violations, attempts: int = 4):
+    """observe() can race with a navigation (e.g. a meta refresh). Retry briefly instead of crashing."""
+    last = None
+    for _ in range(attempts):
+        try:
+            return observe_mod.observe(page)
+        except Exception as e:
+            last = e
+            time.sleep(0.4)
+            if violations:
+                break
+    raise last
+
+
 def _poll(check, seconds=WAIT_SECONDS) -> bool:
     deadline = time.monotonic() + seconds
     while True:
@@ -81,8 +95,36 @@ def _poll(check, seconds=WAIT_SECONDS) -> bool:
 
 def run(page, goal: str, start_url: str, planner, test_data: dict | None = None,
         allowed_hosts: set[str] | None = None, max_steps: int = 15) -> Result:
+    """Runs one test goal. Installs a network-level navigation guard for the whole browser context."""
     test_data = test_data or {}
     allowed = {h.lower() for h in (allowed_hosts or {_host(start_url)})}
+    violations: list[str] = []
+
+    # ANY top-level navigation to a disallowed host is aborted before it loads, whatever caused it
+    # (link, form post, popup, meta refresh, script). The route is on the whole context, so new
+    # tabs are covered too.
+    def _guard(route, request):
+        if request.is_navigation_request():
+            try:
+                check_url(request.url, allowed)
+            except PolicyViolation as e:
+                violations.append(str(e))
+                route.abort()
+                return
+        route.continue_()
+
+    context = page.context
+    context.route("**/*", _guard)
+    try:
+        return _run_loop(page, goal, start_url, planner, test_data, allowed, max_steps, violations)
+    finally:
+        try:
+            context.unroute("**/*", _guard)
+        except Exception:  # the browser may already be closed
+            pass
+
+
+def _run_loop(page, goal, start_url, planner, test_data, allowed, max_steps, violations) -> Result:
     trace, history = [], []
     assertions_passed = 0
     invalid_streak = 0
@@ -97,7 +139,14 @@ def run(page, goal: str, start_url: str, planner, test_data: dict | None = None,
         return finish(False, f"policy violation: {e}", 0)
 
     for step in range(1, max_steps + 1):
-        observation = observe_mod.observe(page)
+        if violations:  # something tried to leave the allowed hosts since the last step
+            return finish(False, f"policy violation: {violations[0]}", step - 1)
+        try:
+            observation = _observe_safely(page, violations)
+        except Exception as e:
+            if violations:
+                return finish(False, f"policy violation: {violations[0]}", step - 1)
+            return finish(False, f"could not read the page: {type(e).__name__}", step - 1)
         entry = {"step": step, "url": page.url, "injection_flags": observation["injection_flags"]}
         trace.append(entry)
         proposed = planner.next_action(goal, observation, history, sorted(test_data))
@@ -152,6 +201,9 @@ def run(page, goal: str, start_url: str, planner, test_data: dict | None = None,
                     return finish(False, f"URL does not contain {action['text']!r} (is {page.url})", step)
                 assertions_passed += 1
 
+            time.sleep(0.3)  # let late navigations (meta refresh, popups) reach the guard
+            if violations:
+                raise PolicyViolation(violations[0])
             check_url(page.url, allowed)  # catches redirects that left the allowed hosts
             entry.setdefault("outcome", "ok")
             invalid_streak = 0

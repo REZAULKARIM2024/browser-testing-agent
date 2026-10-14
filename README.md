@@ -22,11 +22,12 @@ An agent that browses the web has two problems a plain script does not:
 | Rule | Where | Tested by |
 |---|---|---|
 | Only 7 action types run; anything else is rejected | `bta/actions.py` | `tests/test_actions.py` |
-| Browser may only visit allowed hosts (goto, link click, and redirects after a click) | `bta/runner.py` | 3 end-to-end tests |
+| Browser may only visit allowed hosts. A network-level guard aborts ANY top-level navigation to another host before it loads: links, form posts, popups/new tabs, delayed meta refresh, redirects | `bta/runner.py` | 7 end-to-end tests |
+| `javascript:` and `data:` links are refused | `bta/runner.py` | 1 end-to-end test |
 | Passwords only via `value_key` from test data; the model sees key names, never values | `bta/runner.py`, `bta/planner.py` | e2e + planner tests |
 | Pass requires a verified assertion | `bta/runner.py` | 2 e2e tests |
 | Step limit and "2 invalid actions in a row" stop a looping agent | `bta/runner.py` | 2 e2e tests |
-| Injection lines on a page are removed from the observation | `bta/guard.py`, `bta/observe.py` | guard + e2e tests |
+| Injection text is removed from page text AND from element labels, titles and URLs before the model reads them | `bta/guard.py`, `bta/observe.py` | guard + 2 e2e tests |
 
 ## Run it (free: no API key needed for the tests)
 
@@ -36,11 +37,25 @@ playwright install chromium
 pytest -v
 ```
 
-The 39 tests drive a real headless Chromium against a local demo site (`demo_site/`) with a
+The 44 tests drive a real headless Chromium against a local demo site (`demo_site/`) with a
 **scripted planner**, so they are offline, deterministic and cost nothing. They check the
 agent's safety rules (blocked hosts, blocked password literals, redirect escape, injected review
 text) as much as the happy path. The rules were mutation-checked by hand: breaking each one makes
 a test fail (one gap, redirects after a click, was found this way and now has a test).
+
+## What adversarial testing found
+
+The first version only checked the address after each action. Writing hostile demo pages
+(`popup.html`, `refresh.html`, `form.html`, `labels.html`) showed four real gaps:
+
+| Attack | First version | Fix |
+|---|---|---|
+| Button opens a popup on another host | not noticed, run even **passed** | context-wide network guard |
+| Page redirects to another host a second later (meta refresh) | noticed late, after the model read the page | navigation aborted before loading |
+| Form posts to another host | caught only after the request was made | navigation aborted before loading |
+| Injection hidden in a button's `aria-label` | reached the model prompt | labels, title and URLs are scanned too |
+
+Each fix was then mutation-checked by hand: switching it off makes the matching test fail.
 
 ## Let Claude drive (needs `ANTHROPIC_API_KEY`)
 
@@ -61,7 +76,7 @@ bta/planner.py   ScriptedPlanner (offline) and ClaudePlanner
 bta/runner.py    the loop, safety policy and verdict
 bta/__main__.py  CLI
 demo_site/       local pages used by the tests (login, dashboard, poisoned reviews, redirect)
-tests/           39 pytest tests
+tests/           44 pytest tests
 ```
 
 ## Honest limits

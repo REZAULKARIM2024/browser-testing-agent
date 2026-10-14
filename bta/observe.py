@@ -40,16 +40,28 @@ def observe(page) -> dict:
     elements = page.evaluate(_COLLECT_JS)[:MAX_ELEMENTS]
     raw_text = page.evaluate("() => document.body ? document.body.innerText : ''")[:MAX_TEXT]
     text, flags = guard.sanitize_text(raw_text)
-    return {"url": page.url, "title": page.title(), "text": text, "elements": elements, "injection_flags": flags}
+    title = page.title()
+    for value in [title] + [e["name"] for e in elements] + [e["href"] for e in elements]:
+        flags.extend(guard.scan(value))
+    return {"url": page.url, "title": title, "text": text, "elements": elements, "injection_flags": flags}
+
+
+REMOVED = "[removed: possible prompt injection]"
+
+
+def _clean(value: str) -> str:
+    """Anything the model reads is scanned: an attacker can hide instructions in labels, titles or URLs too."""
+    return REMOVED if guard.scan(value) else value
 
 
 def render(observation: dict) -> str:
-    """Plain-text form of an observation, for the model prompt."""
-    lines = [f"URL: {observation['url']}", f"Title: {observation['title']}", "Interactive elements:"]
+    """Plain-text form of an observation, for the model prompt. Raw values stay in the observation
+    (the runner needs real hrefs for its host check); only this text goes to the model."""
+    lines = [f"URL: {_clean(observation['url'])}", f"Title: {_clean(observation['title'])}", "Interactive elements:"]
     for e in observation["elements"]:
         kind = e["tag"] + (f"[{e['type']}]" if e["type"] else "")
-        extra = f" -> {e['href']}" if e["href"] else ""
-        lines.append(f'  - {kind} "{e["name"]}"{extra}')
+        extra = f" -> {_clean(e['href'])}" if e["href"] else ""
+        lines.append(f'  - {kind} "{_clean(e["name"])}"{extra}')
     lines.append("Visible text:")
     lines.append(observation["text"])
     return "\n".join(lines)
