@@ -2,6 +2,8 @@
 
 ![CI](https://github.com/REZAULKARIM2024/browser-testing-agent/actions/workflows/ci.yml/badge.svg)
 
+**[Live demo](https://browser-testing-agent-dfzkfylcwc8a2bmyqjirgk.streamlit.app/)**: replay 15 preset scenarios (normal tests, model mistakes, attacks) in a real headless Chromium.
+
 An LLM-driven browser test agent built with a QA engineer's mindset: **the model proposes
 actions, deterministic code decides pass or fail.** You describe a test goal in plain English
 ("log in with the demo account and check the dashboard"), Claude drives a real Chromium browser
@@ -44,6 +46,8 @@ text) as much as the happy path. The rules were mutation-checked by hand: breaki
 a test fail (one gap, redirects after a click, was found this way and now has a test).
 
 ## Live demo
+
+**https://browser-testing-agent-dfzkfylcwc8a2bmyqjirgk.streamlit.app/**
 
 A Streamlit page lets you replay 15 preset scenarios in a **real headless Chromium** and see why each one passes, fails or is blocked: normal tests, model mistakes (claiming a pass without a check, typing a password, looping) and attacks (injected page text, links, redirects, pop-ups, cross-site form posts, `javascript:` links).
 
