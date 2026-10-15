@@ -37,11 +37,23 @@ playwright install chromium
 pytest -v
 ```
 
-The 44 tests drive a real headless Chromium against a local demo site (`demo_site/`) with a
+The 67 tests drive a real headless Chromium against a local demo site (`demo_site/`) with a
 **scripted planner**, so they are offline, deterministic and cost nothing. They check the
 agent's safety rules (blocked hosts, blocked password literals, redirect escape, injected review
 text) as much as the happy path. The rules were mutation-checked by hand: breaking each one makes
 a test fail (one gap, redirects after a click, was found this way and now has a test).
+
+## Live demo
+
+A Streamlit page lets you replay 15 preset scenarios in a **real headless Chromium** and see why each one passes, fails or is blocked: normal tests, model mistakes (claiming a pass without a check, typing a password, looping) and attacks (injected page text, links, redirects, pop-ups, cross-site form posts, `javascript:` links).
+
+```
+pip install -r requirements.txt
+python -m playwright install chromium
+streamlit run app.py
+```
+
+The public page takes **no URL and no API key**: visitors can only choose from the preset list, so it cannot be pointed at other sites. The scenarios use a scripted planner (free, deterministic) and show how the *rules* behave; they say nothing about how well a model plans. Every scenario is also a test, so the page cannot drift from what the code really does.
 
 ## What adversarial testing found
 
@@ -75,8 +87,11 @@ bta/observe.py   page -> compact observation (elements + visible text)
 bta/planner.py   ScriptedPlanner (offline) and ClaudePlanner
 bta/runner.py    the loop, safety policy and verdict
 bta/__main__.py  CLI
+bta/demo_scenarios.py  15 preset scenarios + the verdict each must produce
+bta/demo_run.py  runs one scenario in headless Chromium, prints JSON
+app.py           Streamlit demo page
 demo_site/       local pages used by the tests (login, dashboard, poisoned reviews, redirect)
-tests/           44 pytest tests
+tests/           67 pytest tests (incl. all 15 demo scenarios in real Chromium)
 ```
 
 ## Honest limits
